@@ -348,6 +348,19 @@
             }
         }
 
+        /* 视频解密失败说明按钮样式 (仅移动端显示) */
+        .decrypt-fail-section {
+            display: flex;
+            justify-content: center;
+            margin-top: 24px;
+        }
+
+        @media screen and (min-width: 1024px) {
+            .decrypt-fail-section {
+                display: none;
+            }
+        }
+
         .download-tool-btn {
             background: #c44536;
             border: 2px solid #ff9e80;
@@ -676,6 +689,30 @@
         <button class="download-tool-btn" id="downloadToolBtn">
             📥 下载视频加密工具（电脑版）
         </button>
+    </div>
+    
+    <!-- 视频解密失败说明按钮 (仅移动端显示) -->
+    <div class="decrypt-fail-section">
+        <button class="action-btn" id="decryptFailBtn">
+            ❓ 我为什么视频解密失败？
+        </button>
+    </div>
+</div>
+
+<!-- 视频解密失败说明弹窗 -->
+<div id="decryptFailModal" class="download-modal-overlay">
+    <div class="download-modal">
+        <button class="modal-close-btn" id="closeDecryptFailModalBtn">&times;</button>
+        <h3>🔍 视频解密失败原因</h3>
+        <p style="font-size: 1.2rem; line-height: 1.6; margin-bottom: 24px; text-align: center;">
+            视频解密失败可能是浏览器兼容问题，建议更换浏览器后重试。
+        </p>
+        <div class="download-buttons">
+            <a href="https://viayoo.com/zh-cn/" target="_blank" class="download-button baidu">
+                🔗 Via 浏览器下载
+            </a>
+        </div>
+        <button class="close-download-modal" id="closeDecryptFailModalBtnBottom">关闭</button>
     </div>
 </div>
 
@@ -1314,23 +1351,20 @@
             } else {
                 // 退出全屏
                 console.log('Fullscreen exited');
-                if (isMobile && isLandscapeVideo) {
-                    console.log('Restoring portrait orientation');
-                    // 恢复全屏元素样式
-                    const wrap = document.getElementById('canvasFullscreenWrapper');
-                    if (wrap.dataset.originalStyle) {
-                        wrap.style.cssText = wrap.dataset.originalStyle;
-                        delete wrap.dataset.originalStyle;
-                    }
-                    
-                    // 恢复body样式
-                    document.body.style.orientation = '';
-                    document.body.style.width = '';
-                    document.body.style.height = '';
-                    document.body.style.margin = '';
-                    document.body.style.padding = '';
-                    document.body.style.overflow = '';
+                // 恢复全屏元素样式
+                const wrap = document.getElementById('canvasFullscreenWrapper');
+                if (wrap.dataset.originalStyle) {
+                    wrap.style.cssText = wrap.dataset.originalStyle;
+                    delete wrap.dataset.originalStyle;
                 }
+                
+                // 恢复body样式（无论是否是移动设备或横屏视频，都需要恢复）
+                document.body.style.orientation = '';
+                document.body.style.width = '';
+                document.body.style.height = '';
+                document.body.style.margin = '';
+                document.body.style.padding = '';
+                document.body.style.overflow = '';
             }
         });
 
@@ -1760,6 +1794,35 @@
         tabVideo.addEventListener('click', () => switchToTab('video'));
         tabImage.addEventListener('click', () => switchToTab('image'));
         refreshBtn.addEventListener('click', () => location.reload());
+    })();
+
+    // ==================== 视频解密失败说明弹窗 ====================
+    (function() {
+        const decryptFailBtn = document.getElementById('decryptFailBtn');
+        const decryptFailModal = document.getElementById('decryptFailModal');
+        const closeDecryptFailModalBtn = document.getElementById('closeDecryptFailModalBtn');
+        const closeDecryptFailModalBtnBottom = document.getElementById('closeDecryptFailModalBtnBottom');
+
+        // 显示弹窗
+        decryptFailBtn.addEventListener('click', () => {
+            decryptFailModal.style.display = 'flex';
+        });
+
+        // 关闭弹窗
+        closeDecryptFailModalBtn.addEventListener('click', () => {
+            decryptFailModal.style.display = 'none';
+        });
+
+        closeDecryptFailModalBtnBottom.addEventListener('click', () => {
+            decryptFailModal.style.display = 'none';
+        });
+
+        // 点击弹窗外部关闭
+        window.addEventListener('click', (e) => {
+            if (e.target === decryptFailModal) {
+                decryptFailModal.style.display = 'none';
+            }
+        });
     })();
 </script>
 </body>
