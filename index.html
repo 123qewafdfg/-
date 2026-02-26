@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0">
+    <title>小番茄 · 双射加密 · 视频+图片合并版 (WebGL修复)</title>
+    <!-- JSZip & FileSaver (用于图片打包) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        /* ========== 合并样式：基础来自2.html，补充视频细节 ========== */
+        * { box-sizing: border-box; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 0; }
+        body { background: #1e1816; margin: 0; padding: 18px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; }
+        .tool-card { max-width: 1400px; width: 100%; background: #0f0c0a; border-radius: 32px; padding: 24px; box-shadow: 0 20px 36px rgba(0,0,0,0.6); border: 1px solid #44332c; }
+
+        .module-tabs { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
+        .module-tab { background: #231c19; color: #ffc5b1; padding: 12px 32px; border-radius: 60px; font-size: 1.3rem; font-weight: 600; border: 1px solid #5f4339; cursor: pointer; transition: all 0.1s; box-shadow: 0 4px 0 #120e0c; }
+        .module-tab.active { background: #c44536; color: #fff3e6; border-color: #ff9e80; transform: translateY(-2px); box-shadow: 0 6px 0 #7a2e24; }
+        .module-tab.inactive { opacity: 0.6; filter: grayscale(0.3); }
+        .refresh-tab-btn { background: #2f2824; color: #ffbcac; padding: 10px 28px; border-radius: 40px; font-size: 1.2rem; border: 1px solid #7a5f54; cursor: pointer; margin-left: auto; box-shadow: 0 4px 0 #1a1412; transition: 0.1s; display: flex; align-items: center; gap: 6px; user-select: none; }
+        .refresh-tab-btn:hover { background: #453a35; transform: translateY(-2px); box-shadow: 0 6px 0 #1a1412; }
+
+        .module-page { display: none; }
+        .module-page.active-page { display: block; }
+
+        /* ---------- 视频解密页面样式 (补充) ---------- */
+        .main-decode-area { display: flex; gap: 28px; flex-wrap: wrap; }
+        .video-preview-box { flex: 3; min-width: 600px; background: #8b7355; border-radius: 24px; padding: 16px 14px; border: 1px solid #d2b48c; box-shadow: 0 0 15px rgba(210, 180, 140, 0.5); }
+        .video-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: #ffb7a0; flex-wrap: wrap; gap: 10px; }
+        .video-wrapper { background: #000; border-radius: 18px; overflow: hidden; aspect-ratio: 16/9; position: relative; cursor: pointer; }
+        canvas { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+
+        .action-strip { flex: 0.8; min-width: 220px; display: flex; flex-direction: column; gap: 20px; background: #0f0c0a; padding: 20px 16px; border-radius: 32px; border: 1px solid #4b352d; }
+        .action-btn, .img-action-btn {
+            height: 4.4rem; border-radius: 60px; padding: 0 20px; font-size: 1.2rem; font-weight: 600;
+            display: inline-flex; align-items: center; justify-content: center; gap: 12px; white-space: nowrap;
+            box-shadow: 0 6px 0 #1c1512; border: 1px solid #6f554b; background: #312a26; color: #ffe1d4;
+            cursor: pointer; transition: 0.05s;
+        }
+        .action-btn.primary, .img-action-btn.primary { background: #1f4a4a; border-color: #65b8b0; box-shadow: 0 6px 0 #0e2a2a; }
+        .action-btn.primary:hover, .img-action-btn.primary:hover { background: #236b6b; transform: translateY(-2px); box-shadow: 0 8px 0 #0e2a2a; }
+        .action-btn:hover, .img-action-btn:hover { background: #403630; transform: translateY(-2px); box-shadow: 0 8px 0 #1c1512; }
+        .action-btn.file-select { position: relative; }
+        .action-btn.file-select input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+
+        .img-action-btn.small { height: 3.6rem; padding: 0 18px; font-size: 1.05rem; box-shadow: 0 5px 0 #1c1512; }
+        .mirror-toggle { display: none !important; }
+
+        /* 按钮禁用效果 */
+        .action-btn:disabled, .img-action-btn:disabled, select:disabled {
+            opacity: 0.55; filter: grayscale(0.5); cursor: not-allowed; pointer-events: auto;
+        }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .param-window { background: #1f1917; border-radius: 36px; padding: 32px; width: 520px; border: 2px solid #7a5f54; color: #ffdac9; box-shadow: 0 30px 50px black; }
+        .param-window h3 { font-size: 1.8rem; margin-bottom: 24px; border-bottom: 2px solid #b16a5a; padding-bottom: 12px; }
+        .param-row { margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
+        .param-row label { font-weight: 600; color: #ffbcac; font-size: 1.1rem; }
+        .param-row input, .param-row select { background: #2f2824; border: 1px solid #a77260; color: white; padding: 14px 18px; border-radius: 50px; font-size: 1.1rem; outline: none; }
+        .radio-group { display: flex; gap: 30px; align-items: center; background: #2b221f; padding: 12px 20px; border-radius: 60px; }
+        .btn-close { background: #c44536; border: none; color: white; padding: 16px 32px; border-radius: 60px; font-size: 1.3rem; font-weight: bold; width: 100%; cursor: pointer; margin-top: 16px; }
+
+        .progress-section { margin-top: 24px; display: flex; align-items: center; gap: 20px; background: #231c19; padding: 12px 26px; border-radius: 60px; }
+        progress { flex: 1; height: 12px; accent-color: #f0704a; background-color: #3a2e2a; border: 1px solid #6f554b; border-radius: 6px; }
+        progress::-webkit-progress-bar { background-color: #3a2e2a; border-radius: 6px; }
+        progress::-webkit-progress-value { background-color: #f0704a; border-radius: 6px; }
+        #status-text { color: #ffd8c4; font-size: 1rem; }
+
+        /* 图片页面 */
+        .image-page-container { background: #080605; border-radius: 24px; padding: 16px 14px; border: 1px solid #543e36; color: #f0d9cf; margin-bottom: 20px; }
+        .image-header-actions { display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px; align-items: stretch; }
+        .file-browse-row { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            gap: 12px; 
+            flex-wrap: wrap;
+        }
+        .file-browse-row .img-action-btn {
+            flex: 1;
+            min-width: 120px;
+            height: auto;
+            min-height: 4rem;
+            padding: 10px 16px;
+            font-size: 1.1rem;
+            white-space: normal;
+            text-align: center;
+        }
+        .image-header-actions > div:nth-child(2) {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .image-header-actions > div:nth-child(2) .img-action-btn {
+            flex: 1;
+            min-width: 120px;
+            height: auto;
+            min-height: 4rem;
+            padding: 10px 16px;
+            font-size: 1.1rem;
+            white-space: normal;
+            text-align: center;
+        }
+        .image-header-actions > div:nth-child(2) .mirror-toggle {
+            white-space: normal;
+            flex-shrink: 1;
+            flex: 1;
+            min-width: 120px;
+            text-align: center;
+        }
+        .reset-row { margin: 10px 0 8px 0; display: flex; align-items: center; }
+        .key-section { background: #231e1b; border-radius: 60px; padding: 8px 18px 8px 28px; display: flex; align-items: center; flex-wrap: wrap; gap: 20px; border: 1px solid #785e52; margin: 20px 0; }
+        .key-label { color: #ffb09c; font-weight: 500; }
+        .key-value { background: #2f2723; border: 1px solid #b18472; border-radius: 60px; padding: 10px 22px; min-width: 240px; color: #ffe2d4; font-family: monospace; font-size: 1.2rem; border: none; outline: none; width: 300px; }
+        .key-actions { display: flex; gap: 12px; margin-left: auto; flex-wrap: wrap; }
+
+        .method-selector-bar { display: flex; align-items: center; gap: 16px; background: #1f1917; border-radius: 60px; padding: 12px 24px; margin: 16px 0 20px 0; border: 1px solid #7a5f54; flex-wrap: wrap; }
+        .method-selector-bar span.label { color: #ffbcac; font-weight: 500; }
+        .method-badge { background: #2b221f; padding: 6px 22px; border-radius: 40px; color: #ffd8c4; border: 1px solid #aa7b6b; font-size: 1.05rem; }
+
+        .export-settings-popup { display: flex; gap: 20px; background: #2c221f; padding: 20px 28px; border-radius: 60px; align-items: center; margin-top: 20px; flex-wrap: wrap; }
+        .export-settings-popup select { background: #1f1917; color: #ffd4c2; padding: 10px 26px; border-radius: 40px; border: 1px solid #aa7b6b; font-size: 1.1rem; }
+        .export-settings-popup label { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; color: #ffcfbe; cursor: pointer; white-space: nowrap; }
+        .export-settings-popup input[type="checkbox"] { width: 20px; height: 20px; accent-color: #c44536; }
+
+        .img-action-btn.highlight { background: #2a7a3a; border-color: #8feca0; box-shadow: 0 6px 0 #14521f; }
+        .img-action-btn.highlight:hover { background: #359b48; }
+        .img-action-btn.disabled { background: #c44536; border-color: #ff9e80; box-shadow: 0 6px 0 #7a2e24; }
+        .img-action-btn.disabled:hover { background: #d65a48; }
+
+        /* 预览弹窗 (图片) */
+        #previewModal .param-window { background: transparent !important; border: none !important; box-shadow: none !important; padding: 0 !important; width: auto !important; max-width: 90vw; }
+        .preview-container { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+        .preview-img-wrapper { height: 60vh; width: 100%; display: flex; justify-content: center; align-items: center; background: #1a1a1a; border-radius: 16px; }
+        #previewImg { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0 !important; background: #1a1a1a; box-shadow: 0 10px 30px rgba(0,0,0,0.6); cursor: pointer; }
+        .preview-nav { display: flex; justify-content: center; align-items: center; gap: 40px; background: rgba(30, 24, 22, 0.8); backdrop-filter: blur(6px); padding: 12px 32px; border-radius: 60px; border: 1px solid #7a5a4c; }
+        .preview-nav span { font-size: 3rem; cursor: pointer; user-select: none; color: #f0a58b; background: #2f2824; padding: 0 20px; border-radius: 60px; transition: 0.1s; line-height: 1.2; border: 1px solid #b17b68; }
+        .preview-nav span:hover { background: #453a35; color: #ffcfbe; transform: scale(1.05); }
+        .preview-nav .preview-counter { font-size: 1.4rem; color: #ffdac9; font-weight: 500; min-width: 100px; text-align: center; }
+
+        #hidden-video { display: none; }
+
+        /* ========== 新增免责声明样式 ========== */
+        .disclaimer {
+            background: #1e1613;
+            border-radius: 24px;
+            padding: 24px 26px;
+            margin-top: 32px;
+            border: 1px solid #5c4238;
+            color: #e6cfc2;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.4);
+        }
+        .disclaimer h5 {
+            margin: 0 0 16px 0;
+            color: #ffb7a0;
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            border-left: 6px solid #c44536;
+            padding-left: 16px;
+        }
+        .disclaimer p {
+            margin: 12px 0;
+        }
+        .disclaimer strong {
+            color: #ffaa91;
+            font-weight: 600;
+            margin-right: 6px;
+        }
+        .disclaimer a {
+            color: #e69780;
+            text-decoration: underline dotted;
+        }
+        .disclaimer a:hover {
+            color: #ffbea6;
+        }
+
+        /* 移动端适配补充 */
+        @media screen and (max-width: 750px) {
+            body { padding: 10px; }
+            .tool-card { padding: 16px; border-radius: 28px; }
+            .module-tab { padding: 8px 18px; font-size: 1.1rem; }
+            .video-preview-box { min-width: 100%; padding: 12px; }
+            .video-header { flex-direction: column; align-items: flex-start; }
+            .action-strip { min-width: 100%; padding: 16px; }
+            .action-btn { height: auto; min-height: 4rem; white-space: normal; padding: 10px 16px; font-size: 1.1rem; }
+            .progress-section { flex-wrap: wrap; gap: 10px; padding: 12px 16px; }
+            .progress-section progress { width: 100%; }
+
+            /* 图片解密页面移动端适配 */
+            .image-header-actions { flex-direction: column; align-items: stretch; gap: 12px; }
+            .file-browse-row { 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center; 
+                gap: 10px; 
+                flex-wrap: wrap;
+            }
+            .file-browse-row .img-action-btn {
+                flex: 1;
+                min-width: 80px;
+                height: auto;
+                min-height: 3rem;
+                padding: 8px 12px;
+                font-size: 0.9rem;
+                white-space: normal;
+                text-align: center;
+            }
+            .image-header-actions > div:nth-child(2) {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .image-header-actions > div:nth-child(2) .img-action-btn {
+                flex: 1;
+                min-width: 80px;
+                height: auto;
+                min-height: 3rem;
+                padding: 8px 12px;
+                font-size: 0.9rem;
+                white-space: normal;
+                text-align: center;
+            }
+            .image-header-actions > div:nth-child(2) .mirror-toggle {
+                white-space: normal;
+                flex-shrink: 1;
+                flex: 1;
+                min-width: 80px;
+                text-align: center;
+            }
+            .img-action-btn.small { 
+                height: auto; 
+                min-height: 2.8rem; 
+                padding: 6px 10px; 
+                font-size: 0.9rem; 
+            }
+            .reset-row { 
+                flex-wrap: wrap; 
+                gap: 8px; 
+                justify-content: center;
+            }
+            .key-section { 
+                flex-direction: column; 
+                align-items: stretch; 
+                padding: 12px; 
+                gap: 10px;
+            }
+            .key-value { 
+                min-width: 0; 
+                text-align: center; 
+                word-break: break-all; 
+                width: 100%;
+                font-size: 1rem;
+                padding: 8px 16px;
+            }
+            .key-actions { 
+                margin-left: 0; 
+                justify-content: center;
+                gap: 8px;
+            }
+            .method-selector-bar { 
+                flex-direction: column; 
+                align-items: stretch; 
+                text-align: center; 
+                padding: 10px 16px;
+                gap: 8px;
+            }
+            .export-settings-popup { 
+                flex-direction: column; 
+                align-items: stretch; 
+                padding: 12px; 
+                gap: 12px;
+            }
+            .export-settings-popup select { 
+                width: 100%; 
+                font-size: 1rem;
+                padding: 8px 16px;
+            }
+            .export-settings-popup label { 
+                font-size: 1rem;
+                justify-content: center;
+            }
+            .param-window { 
+                width: 92%; 
+                padding: 20px; 
+                max-height: 90vh;
+                overflow-y: auto;
+            }
+            .disclaimer { 
+                padding: 12px; 
+                font-size: 0.8rem;
+            }
+            .preview-img-wrapper { 
+                height: 50vh; 
+            }
+            .preview-nav { 
+                gap: 20px;
+                padding: 8px 16px;
+            }
+            .preview-nav span { 
+                font-size: 2rem;
+                padding: 0 12px;
+            }
+            .preview-counter { 
+                font-size: 1.2rem;
+                min-width: 80px;
+            }
+        }
+        @media screen and (max-width: 400px) {
+            .module-tab { padding: 6px 12px; font-size: 0.95rem; }
+            .img-action-btn { 
+                font-size: 0.9rem;
+                padding: 6px 10px;
+            }
+            .key-value { 
+                font-size: 0.9rem;
+                padding: 6px 12px;
+            }
+            .method-badge { 
+                font-size: 0.95rem;
+                padding: 4px 16px;
+            }
+            .export-settings-popup select { 
+                font-size: 0.9rem;
+                padding: 6px 12px;
+            }
+            .export-settings-popup label { 
+                font-size: 0.9rem;
+            }
+        }
+
+        /* 下载工具按钮样式 */
+        .download-tool-section {
+            display: none;
+            margin-top: 40px;
+            text-align: center;
+        }
+
+        @media screen and (min-width: 1024px) {
+            .download-tool-section {
+                display: block;
+            }
+        }
+
+        .download-tool-btn {
+            background: #c44536;
+            border: 2px solid #ff9e80;
+            color: #fff3e6;
+            padding: 16px 40px;
+            border-radius: 60px;
+            font-size: 1.4rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 6px 0 #7a2e24;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .download-tool-btn:hover {
+            background: #d65a4a;
+            transform: translateY(-3px);
+            box-shadow: 0 8px 0 #7a2e24;
+        }
+
+        .download-tool-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 2px 0 #7a2e24;
+        }
+
+        /* 下载弹窗样式 */
+        .download-modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            backdrop-filter: blur(4px);
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .download-modal {
+            background: #1f1917;
+            border-radius: 36px;
+            padding: 32px;
+            width: 90%;
+            max-width: 600px;
+            border: 2px solid #7a5f54;
+            color: #ffdac9;
+            box-shadow: 0 30px 50px rgba(0, 0, 0, 0.8);
+            animation: slideIn 0.3s ease;
+            position: relative;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .download-modal h3 {
+            font-size: 1.8rem;
+            margin-bottom: 24px;
+            border-bottom: 2px solid #b16a5a;
+            padding-bottom: 12px;
+            text-align: center;
+        }
+
+        .download-buttons {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .download-button {
+            background: #312a26;
+            border: 1px solid #6f554b;
+            color: #ffe1d4;
+            padding: 16px 24px;
+            border-radius: 60px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 #1c1512;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .download-button:hover {
+            background: #403630;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 #1c1512;
+        }
+
+        .download-button:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #1c1512;
+        }
+
+        .download-button.baidu {
+            background: #1f4a4a;
+            border-color: #65b8b0;
+            box-shadow: 0 4px 0 #0e2a2a;
+        }
+
+        .download-button.baidu:hover {
+            background: #236b6b;
+            box-shadow: 0 6px 0 #0e2a2a;
+        }
+
+        .download-button.cloud123 {
+            background: #4a1f1f;
+            border-color: #b06565;
+            box-shadow: 0 4px 0 #2a0e0e;
+        }
+
+        .download-button.cloud123:hover {
+            background: #6b2323;
+            box-shadow: 0 6px 0 #2a0e0e;
+        }
+
+        .download-button.quark {
+            background: #1f1f4a;
+            border-color: #6565b0;
+            box-shadow: 0 4px 0 #0e0e2a;
+        }
+
+        .download-button.quark:hover {
+            background: #23236b;
+            box-shadow: 0 6px 0 #0e0e2a;
+        }
+
+        .close-download-modal {
+            background: #c44536;
+            border: none;
+            color: white;
+            padding: 14px 32px;
+            border-radius: 60px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            width: 100%;
+            cursor: pointer;
+            margin-top: 16px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 #7a2e24;
+        }
+
+        .close-download-modal:hover {
+            background: #d65a4a;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 #7a2e24;
+        }
+
+        .close-download-modal:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #7a2e24;
+        }
+
+        .modal-close-btn {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: #2f2824;
+            border: 1px solid #6f554b;
+            color: #ffdac9;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close-btn:hover {
+            background: #403630;
+            transform: scale(1.1);
+        }
+    </style>
+</head>
+<body>
+<div class="tool-card">
+    <!-- 标签页 + 刷新按钮 -->
+    <div class="module-tabs">
+        <div class="module-tab active" id="tabVideoDecode">🎬 视频解密</div>
+        <div class="module-tab" id="tabImageDecode">🖼️ 图片解密</div>
+        <span class="refresh-tab-btn" id="refreshCurrentBtn">🔄 刷新当前</span>
+    </div>
+
+    <!-- 视频解密页面 (完整版 from 1.html) -->
+    <div id="videoPage" class="module-page active-page">
+        <div class="main-decode-area">
+            <div class="video-preview-box">
+                <div class="video-header">
+                    <span style="background:#803f5e; padding:4px 18px; border-radius:40px;">🔓 解密实时预览</span>
+                    <span id="video-dim"></span>
+                    <!-- 水平镜像复选框 (隐藏但强制开启) -->
+                    <label class="mirror-toggle"><input type="checkbox" id="horizontalMirrorVideo" checked> 🪞 水平镜像</label>
+                </div>
+                <div class="video-wrapper" id="canvasFullscreenWrapper">
+                    <canvas id="decodeCanvas"></canvas>
+                </div>
+            </div>
+            <div class="action-strip">
+                <div class="action-btn file-select">
+                    📂 选择视频
+                    <input type="file" accept="video/*" id="videoFileInput">
+                </div>
+                <button class="action-btn primary" id="startDecodeBtn">⚡ 解密执行</button>
+                <button class="action-btn" id="paramBtn">⚙️ 参数设置</button>
+                <div id="actionStatus" style="color: #ffd8c4; font-size: 1rem; text-align: center; margin-top: 10px; padding: 10px; background: #231c19; border-radius: 20px; border: 1px solid #4b352d;">当前未导入视频，请选择解密状态。</div>
+            </div>
+        </div>
+        <div class="progress-section" style="display: none;">
+            <span style="font-weight:600; color:#ffc5b1;">📊 解密进度</span>
+            <progress id="decodeProgress" value="0" max="100"></progress>
+            <span id="status-text">⏸️ 等待视频选择</span>
+        </div>
+
+        <!-- ========== 视频页面免责声明 ========== -->
+        <div class="disclaimer">
+            <h5>网站免责声明</h5>
+            <p><strong>一般信息</strong> 本网站上的所有内容（包括但不限于文字、图形、图像、照片、视频、音频、链接及其他材料）仅供参考。我们尽力确保信息的准确性和时效性，但不作任何明示或暗示的保证。</p>
+            <p><strong>不构成专业建议</strong> 本网站内容不构成任何形式的专业建议（包括但不限于法律、财务、医疗或技术建议）。在采取任何基于本网站信息的行动前，请咨询相关领域的专业人士。</p>
+            <p><strong>外部链接免责</strong> 本网站可能包含指向第三方网站的超链接。这些链接仅为方便用户提供，不代表我们对其内容的认可。我们对任何链接网站的内容、隐私政策或实践不承担任何责任。</p>
+            <p><strong>责任限制</strong> 在法律允许的最大范围内，我们不对因使用或无法使用本网站及其内容而造成的任何直接、间接、偶然、特殊或后果性损失承担责任，即使我们已被告知可能发生此类损失。</p>
+            <p><strong>“按原样”提供</strong> 本网站及其所有内容均按“原样”和“可用性”提供，不附带任何形式的保证。我们保留随时修改、暂停或终止网站任何部分的权利，恕不另行通知。</p>
+            <p><strong>知识产权</strong> 除非另有说明，本网站上的所有内容（包括但不限于商标、徽标、设计、文本和图像）均为我们或我们的许可方的财产，受版权和其他知识产权法保护。未经明确书面许可，不得复制、分发或用于商业目的。</p>
+            <p><strong>用户行为</strong> 用户在使用本网站时，不得从事任何可能损害、瘫痪或干扰网站正常运行的行为，也不得尝试未经授权访问网站的受限部分或系统。</p>
+            <p><strong>个人责任</strong> 您同意自行承担使用本网站及其内容的风险。您对依赖本网站信息所做的任何决定和行动负全部责任。</p>
+            <p><strong>条款变更</strong> 我们保留随时更新、修改或替换本免责声明任何部分的权利。变更后的声明将在本页面公布，并注明最后更新日期。您有责任定期查看本页面以了解最新条款。</p>
+            <p><strong>适用法律</strong> 本免责声明受中国法律管辖并依其解释，不适用其法律冲突原则。</p>
+            <p style="margin-top:16px; color:#bda69a; font-size:0.8rem; border-top:1px dashed #5c4238; padding-top:10px;">本网站由DeepSeek编写。</p>
+        </div>
+    </div>
+
+    <!-- 图片解密页面 (完整版 from 2.html) -->
+    <div id="imagePage" class="module-page">
+        <div class="image-page-container">
+            <div class="image-header-actions">
+                <div class="file-browse-row">
+                    <button class="img-action-btn" id="browseImages">📂 浏览文件</button>
+                    <button class="img-action-btn" id="exportConfigImg">📁 导出至文件夹</button>
+                    <button class="img-action-btn primary" id="downloadAllBtn">📥 下载所有</button>
+                </div>
+                <div>
+                    <label class="mirror-toggle"><input type="checkbox" id="horizontalMirrorImage" checked> 🪞 水平镜像</label>
+                    <button class="img-action-btn primary" id="startEncryptImg">🔒 开始加密</button>
+                    <button class="img-action-btn primary" id="startDecryptImg">🔓 开始解密</button>
+                    <button class="img-action-btn" id="viewPreviewBtn">🔍 查看预览图</button>
+                </div>
+            </div>
+
+            <!-- 还原按钮行 -->
+            <div class="reset-row">
+                <button class="img-action-btn small" id="resetToOriginalBtn">↺ 还原原图</button>
+                <button class="img-action-btn small disabled" id="reencryptToggleBtn">🚫 禁止重加密</button>
+            </div>
+
+            <!-- 处理报告行 + 进度条 + 图片计数 -->
+            <div class="progress-section" style="margin-top:20px;">
+                <progress id="imageProgress" value="0" max="100"></progress>
+                <input type="text" readonly id="selectedCountDisplay" class="key-value" style="width:auto; max-width:160px; margin-left:auto; background:#2f2723; cursor:default;" value="0 张图片">
+            </div>
+
+            <!-- 密钥区域 -->
+            <div class="key-section">
+                <span class="key-label">🔑 密钥：</span>
+                <input type="text" id="keyInputImg" class="key-value" placeholder="可为空" value="">
+                <div class="key-actions">
+                    <button class="img-action-btn small" id="randomKeyBtn">🎲 随机生成</button>
+                    <button class="img-action-btn small" id="copyKeyBtn">📋 复制密钥</button>
+                </div>
+            </div>
+
+            <!-- 加密方式栏 -->
+            <div class="method-selector-bar">
+                <span class="label">🔧 加密方式：</span>
+                <span class="method-badge" id="currentMethodDisplay">吉尔伯特曲线</span>
+                <button class="img-action-btn small" id="chooseMethodBtn">选择加密方式</button>
+            </div>
+
+            <!-- 导出设置区 -->
+            <div class="export-settings-popup">
+                <span style="font-weight:600;">📸 导出设置</span>
+                <select id="imgFormat">
+                    <option value="jpg95">JPG (95% 质量)</option>
+                    <option value="png" selected>PNG (无损)</option>
+                    <option value="webp">WEBP (无损)</option>
+                </select>
+                <label><input type="checkbox" id="packDownload"> 打包下载文件</label>
+                <label><input type="checkbox" id="exportKeyFileCheckbox"> 导出密钥文件（TXT）</label>
+            </div>
+
+            <!-- ========== 图片页面免责声明 ========== -->
+            <div class="disclaimer">
+                <h5>网站免责声明</h5>
+                <p><strong>一般信息</strong> 本网站上的所有内容（包括但不限于文字、图形、图像、照片、视频、音频、链接及其他材料）仅供参考。我们尽力确保信息的准确性和时效性，但不作任何明示或暗示的保证。</p>
+                <p><strong>不构成专业建议</strong> 本网站内容不构成任何形式的专业建议（包括但不限于法律、财务、医疗或技术建议）。在采取任何基于本网站信息的行动前，请咨询相关领域的专业人士。</p>
+                <p><strong>外部链接免责</strong> 本网站可能包含指向第三方网站的超链接。这些链接仅为方便用户提供，不代表我们对其内容的认可。我们对任何链接网站的内容、隐私政策或实践不承担任何责任。</p>
+                <p><strong>责任限制</strong> 在法律允许的最大范围内，我们不对因使用或无法使用本网站及其内容而造成的任何直接、间接、偶然、特殊或后果性损失承担责任，即使我们已被告知可能发生此类损失。</p>
+                <p><strong>“按原样”提供</strong> 本网站及其所有内容均按“原样”和“可用性”提供，不附带任何形式的保证。我们保留随时修改、暂停或终止网站任何部分的权利，恕不另行通知。</p>
+                <p><strong>知识产权</strong> 除非另有说明，本网站上的所有内容（包括但不限于商标、徽标、设计、文本和图像）均为我们或我们的许可方的财产，受版权和其他知识产权法保护。未经明确书面许可，不得复制、分发或用于商业目的。</p>
+                <p><strong>用户行为</strong> 用户在使用本网站时，不得从事任何可能损害、瘫痪或干扰网站正常运行的行为，也不得尝试未经授权访问网站的受限部分或系统。</p>
+                <p><strong>个人责任</strong> 您同意自行承担使用本网站及其内容的风险。您对依赖本网站信息所做的任何决定和行动负全部责任。</p>
+                <p><strong>条款变更</strong> 我们保留随时更新、修改或替换本免责声明任何部分的权利。变更后的声明将在本页面公布，并注明最后更新日期。您有责任定期查看本页面以了解最新条款。</p>
+                <p><strong>适用法律</strong> 本免责声明受中国法律管辖并依其解释，不适用其法律冲突原则。</p>
+                <p style="margin-top:16px; color:#bda69a; font-size:0.8rem; border-top:1px dashed #5c4238; padding-top:10px;">本网站由DeepSeek编写。</p>
+            </div>
+        </div>
+    </div>
+    <div class="footer"></div>
+
+    <!-- 下载工具按钮区域 -->
+    <div class="download-tool-section">
+        <button class="download-tool-btn" id="downloadToolBtn">
+            📥 下载视频加密工具（电脑版）
+        </button>
+    </div>
+</div>
+
+<!-- 下载弹窗 -->
+<div id="downloadModal" class="download-modal-overlay">
+    <div class="download-modal">
+        <button class="modal-close-btn" id="closeDownloadModalBtn">&times;</button>
+        <h3>📥 选择下载方式</h3>
+        <div class="download-buttons">
+            <a href="https://pan.baidu.com/s/19FdfRTJFkXqYhtE_iodZXw?pwd=a8kt" target="_blank" class="download-button baidu">
+                🔗 百度网盘下载
+            </a>
+            <a href="https://www.123865.com/s/QL9VVv-r9AZh" target="_blank" class="download-button cloud123">
+                🔗 123 云盘下载
+            </a>
+            <a href="https://pan.quark.cn/s/4b501ad73cf7" target="_blank" class="download-button quark">
+                🔗 夸克云盘下载
+            </a>
+        </div>
+        <button class="close-download-modal" id="closeDownloadModalBtnBottom">关闭</button>
+    </div>
+</div>
+
+<!-- 共用隐藏视频元素 -->
+<video id="hidden-video" crossorigin="anonymous" preload="auto" playsinline></video>
+
+<!-- 视频解密参数弹窗 (来自1.html) -->
+<div id="paramModal" class="modal-overlay">
+    <div class="param-window">
+        <h3>🔧 视频解密参数</h3>
+        <div class="param-row">
+            <label>解密方式</label>
+            <div class="radio-group" id="decModeRadioGroup">
+                <label><input type="radio" name="decMode" value="gilbert" checked> 吉尔伯特曲线</label>
+                <label><input type="radio" name="decMode" value="block"> 块打乱</label>
+            </div>
+        </div>
+        <div class="param-row">
+            <label>密钥 (可选)</label>
+            <input type="text" id="keyInput" placeholder="留空表示无密钥" value="">
+        </div>
+        <div class="param-row" id="blockWidthRow">
+            <label>块宽度 (像素, 仅块打乱)</label>
+            <input type="number" id="blockWidth" value="16" min="8" max="256" step="8">
+        </div>
+        <div class="param-row" id="blockHeightRow">
+            <label>块高度 (像素)</label>
+            <input type="number" id="blockHeight" value="16" min="8" max="256" step="8">
+        </div>
+        <!-- 旋转180°复选框：默认勾选且隐藏 -->
+        <div class="checkbox-row" id="rotateCheckboxRow" style="display: none;">
+            <label><input type="checkbox" id="rotateCheckbox" checked> 🔄 输出旋转180° (固定开启)</label>
+        </div>
+        <button class="btn-close" id="closeParamBtn">保存并关闭</button>
+    </div>
+</div>
+
+<!-- 图片加密方式选择弹窗 (来自2.html) -->
+<div id="encryptMethodModal" class="modal-overlay">
+    <div class="param-window" style="width:560px;">
+        <h3>⚙️ 选择加密方式</h3>
+        <div class="param-row">
+            <div class="radio-group" id="imgEncryptModeGroup">
+                <label><input type="radio" name="imgEncryptMode" value="gilbert" checked> 吉尔伯特曲线</label>
+                <label><input type="radio" name="imgEncryptMode" value="block"> 分块打乱</label>
+            </div>
+        </div>
+        <div id="imgBlockParams" style="display: none;">
+            <div class="param-row">
+                <label>块宽度 (像素)</label>
+                <select id="imgBlockWidthSelect"></select>
+            </div>
+            <div class="param-row">
+                <label>块高度 (像素)</label>
+                <select id="imgBlockHeightSelect"></select>
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 16px;">
+                <button class="img-action-btn small" id="standardizeBtn" disabled>📐 标准化 (高度=宽度)</button>
+            </div>
+            <div id="blockHint" style="color: #ffa07a; font-size:0.9rem; padding:0 10px;"></div>
+        </div>
+        <button class="btn-close" id="saveEncryptMethodBtn">保存并关闭</button>
+    </div>
+</div>
+
+<!-- 图片预览弹窗 (来自2.html) -->
+<div id="previewModal" class="modal-overlay" style="display: none;">
+    <div class="param-window">
+        <div class="preview-container">
+            <div class="preview-img-wrapper">
+                <img id="previewImg" src="" alt="预览图">
+            </div>
+            <div class="preview-nav">
+                <span id="prevPreviewBtn">←</span>
+                <span class="preview-counter" id="previewCounter"></span>
+                <span id="nextPreviewBtn">→</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 隐藏的图片文件选择器 -->
+<input type="file" id="imageFilePicker" multiple accept="image/*" style="display: none;">
+
+<script>
+    // ==================== 视频解密模块 (IIFE) ====================
+    (function() {
+        "use strict";
+
+        // ---------- 视频全局变量 ----------
+        const video = document.getElementById('hidden-video');
+        const canvas = document.getElementById('decodeCanvas');
+        const statusEl = document.getElementById('status-text');
+        const progressBar = document.getElementById('decodeProgress');
+        const actionStatus = document.getElementById('actionStatus');
+        let videoWidth = 0, videoHeight = 0, totalPixels = 0;
+        let isDecrypting = false;
+        let currentFileURL = null;
+        let decMode = 'gilbert', secretKey = '', blockW = 16, blockH = 16;
+        const horizontalMirror = true;      // 固定开启
+        const rotateEnabled = true;
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        let isLandscapeVideo = false;
+
+        // WebGL2相关
+        let offscreenCanvas = null;
+        let gl = null;
+        let program = null;
+        let uvTexture = null;
+        let videoTexture = null;
+        let vao = null;
+        let uniformLoc = { videoSampler: null, uvSampler: null }; // 初始化为null
+        let displayCtx = null;
+        let currentDecryptMap = null;
+
+        // ---------- 吉尔伯特曲线算法 (返回索引数组) ----------
+        function gilbert2d(width, height) {
+            const coords = [];
+            if (width >= height) {
+                generate(0, 0, width, 0, 0, height, coords, width);
+            } else {
+                generate(0, 0, 0, height, width, 0, coords, width);
+            }
+            return coords;
+        }
+        function generate(x, y, ax, ay, bx, by, coords, imgWidth) {
+            const w = Math.abs(ax + ay);
+            const h = Math.abs(bx + by);
+            const dax = Math.sign(ax) || 0, day = Math.sign(ay) || 0;
+            const dbx = Math.sign(bx) || 0, dby = Math.sign(by) || 0;
+            if (h === 1) {
+                for (let i = 0; i < w; i++) {
+                    coords.push(y * imgWidth + x);
+                    x += dax; y += day;
+                }
+                return;
+            }
+            if (w === 1) {
+                for (let i = 0; i < h; i++) {
+                    coords.push(y * imgWidth + x);
+                    x += dbx; y += dby;
+                }
+                return;
+            }
+            let ax2 = Math.floor(ax / 2), ay2 = Math.floor(ay / 2);
+            let bx2 = Math.floor(bx / 2), by2 = Math.floor(by / 2);
+            if (2 * w > 3 * h) {
+                if ((Math.abs(ax2 + ay2) % 2) !== 0 && w > 2) { ax2 += dax; ay2 += day; }
+                generate(x, y, ax2, ay2, bx, by, coords, imgWidth);
+                generate(x + ax2, y + ay2, ax - ax2, ay - ay2, bx, by, coords, imgWidth);
+            } else {
+                if ((Math.abs(bx2 + by2) % 2) !== 0 && h > 2) { bx2 += dbx; by2 += dby; }
+                generate(x, y, bx2, by2, ax2, ay2, coords, imgWidth);
+                generate(x + bx2, y + by2, ax, ay, bx - bx2, by - by2, coords, imgWidth);
+                generate(x + (ax - dax) + (bx2 - dbx), y + (ay - day) + (by2 - dby),
+                       -bx2, -by2, -(ax - ax2), -(ay - ay2), coords, imgWidth);
+            }
+        }
+        function getGilbertIndices(w, h) { return new Uint32Array(gilbert2d(w, h)); }
+        function getGilbertOffset(key, totalPixels) {
+            if (!key) return Math.round((Math.sqrt(5) - 1) / 2 * totalPixels);
+            else { let hash = 0; for (let i = 0; i < key.length; i++) hash = ((hash << 5) - hash) + key.charCodeAt(i); hash = Math.abs(hash); return hash % totalPixels; }
+        }
+        function buildGilbertDecryptMap(width, height, offset) {
+            const total = width * height;
+            const curve = getGilbertIndices(width, height);
+            const rolled = new Uint32Array(total);
+            for (let i = 0; i < total; i++) rolled[i] = curve[(i + offset) % total];
+            const encMap = new Uint32Array(total);
+            for (let i = 0; i < total; i++) encMap[curve[i]] = rolled[i];
+            const map = new Uint32Array(total);
+            for (let i = 0; i < total; i++) map[encMap[i]] = i;
+            return map;
+        }
+
+        // ---------- 块打乱 ----------
+        function simpleHash(str) { let h = 0; if (!str) return 123456; for (let i = 0; i < str.length; i++) { h = ((h << 5) - h) + str.charCodeAt(i); h |= 0; } return Math.abs(h); }
+        function createSeededRNG(seed) { return function() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; } }
+        function generateBlockOrder(numBlocks, key) {
+            const seed = simpleHash(key);
+            const rng = createSeededRNG(seed);
+            const order = Array.from({length: numBlocks}, (_, i) => i);
+            for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+            return order;
+        }
+        function buildBlockDecryptMap(width, height, blockW, blockH, key) {
+            const cols = Math.ceil(width / blockW);
+            const rows = Math.ceil(height / blockH);
+            const totalBlocks = cols * rows;
+            const encryptOrder = generateBlockOrder(totalBlocks, key);
+            const blocks = [];
+            for (let row = 0; row < rows; row++) {
+                for (let col = 0; col < cols; col++) {
+                    const x = col * blockW, y = row * blockH;
+                    const w = Math.min(blockW, width - x), h = Math.min(blockH, height - y);
+                    blocks.push({x, y, w, h, col, row, idx: row * cols + col});
+                }
+            }
+            const decryptMap = new Uint32Array(width * height);
+            for (let srcBlockIdx = 0; srcBlockIdx < totalBlocks; srcBlockIdx++) {
+                const dstBlockIdx = encryptOrder[srcBlockIdx];
+                const srcBlock = blocks[srcBlockIdx];
+                const dstBlock = blocks[dstBlockIdx];
+                for (let localY = 0; localY < srcBlock.h; localY++) {
+                    for (let localX = 0; localX < srcBlock.w; localX++) {
+                        const srcX = srcBlock.x + localX, srcY = srcBlock.y + localY;
+                        const dstX = dstBlock.x + localX, dstY = dstBlock.y + localY;
+                        if (dstX < width && dstY < height) {
+                            const srcIdx = srcY * width + srcX;
+                            const dstIdx = dstY * width + dstX;
+                            decryptMap[srcIdx] = dstIdx;
+                        }
+                    }
+                }
+            }
+            return decryptMap;
+        }
+
+        function generateRawDecryptMap() {
+            if (!videoWidth || !videoHeight) throw new Error('视频尺寸未就绪');
+            if (decMode === 'gilbert') {
+                const offset = getGilbertOffset(secretKey, totalPixels);
+                return buildGilbertDecryptMap(videoWidth, videoHeight, offset);
+            } else {
+                return buildBlockDecryptMap(videoWidth, videoHeight, blockW, blockH, secretKey);
+            }
+        }
+
+        // ---------- WebGL2初始化 (增加错误检查) ----------
+        function initWebGL() {
+            if (gl) return true; // 已初始化
+
+            offscreenCanvas = document.createElement('canvas');
+            gl = offscreenCanvas.getContext('webgl2', { alpha: false, desynchronized: true, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+            if (!gl) { 
+                statusEl.innerText = '浏览器不支持WebGL2，无法使用GPU加速'; 
+                return false;
+            }
+            displayCtx = canvas.getContext('2d');
+            if (!displayCtx) { 
+                statusEl.innerText = '无法获取2D画布上下文'; 
+                gl = null; // 清理
+                return false;
+            }
+
+            const vsSrc = `#version 300 es
+                layout(location = 0) in vec2 aPos;
+                void main() {
+                    gl_Position = vec4(aPos, 0.0, 1.0);
+                }
+            `;
+            const fsSrc = `#version 300 es
+                precision highp float;
+                precision highp sampler2D;
+                uniform sampler2D uVideoTex;
+                uniform sampler2D uUvTex;
+                out vec4 outColor;
+                void main() {
+                    ivec2 coord = ivec2(gl_FragCoord.xy);
+                    vec4 uvData = texelFetch(uUvTex, coord, 0);
+                    vec2 uv = uvData.rg;
+                    outColor = texture(uVideoTex, uv);
+                }
+            `;
+            const vs = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vs, vsSrc);
+            gl.compileShader(vs);
+            if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+                console.error('VS compile error:', gl.getShaderInfoLog(vs));
+                statusEl.innerText = '顶点着色器编译失败';
+                gl = null; return false;
+            }
+            const fs = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fs, fsSrc);
+            gl.compileShader(fs);
+            if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+                console.error('FS compile error:', gl.getShaderInfoLog(fs));
+                statusEl.innerText = '片段着色器编译失败';
+                gl = null; return false;
+            }
+            program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Link error:', gl.getProgramInfoLog(program));
+                statusEl.innerText = '着色器链接失败';
+                gl = null; return false;
+            }
+            gl.useProgram(program);
+
+            // 获取uniform位置并检查有效性
+            uniformLoc.videoSampler = gl.getUniformLocation(program, 'uVideoTex');
+            uniformLoc.uvSampler = gl.getUniformLocation(program, 'uUvTex');
+            if (uniformLoc.videoSampler === null || uniformLoc.uvSampler === null) {
+                console.error('Uniform location not found');
+                statusEl.innerText = '着色器uniform获取失败';
+                gl = null; return false;
+            }
+
+            const vertices = new Float32Array([-1,-1, 3,-1, -1,3]);
+            const vbo = gl.createBuffer(); 
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo); 
+            gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+            vao = gl.createVertexArray(); 
+            gl.bindVertexArray(vao); 
+            gl.enableVertexAttribArray(0); 
+            gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0); 
+            gl.bindVertexArray(null);
+
+            videoTexture = gl.createTexture(); 
+            gl.bindTexture(gl.TEXTURE_2D, videoTexture); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); 
+            gl.bindTexture(gl.TEXTURE_2D, null);
+
+            uvTexture = gl.createTexture(); 
+            gl.bindTexture(gl.TEXTURE_2D, uvTexture); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); 
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST); 
+            gl.bindTexture(gl.TEXTURE_2D, null);
+
+            statusEl.innerText = 'WebGL2就绪 (离屏渲染)';
+            return true;
+        }
+
+        function updateUvTextureFromMap(map, width, height) {
+            if (!gl || !uvTexture) return;
+            const total = width * height;
+            const uvData = new Float32Array(total * 4);
+            for (let dstIdx = 0; dstIdx < total; dstIdx++) {
+                const srcIdx = map[dstIdx];
+                const srcX = srcIdx % width;
+                const srcY = Math.floor(srcIdx / width);
+                const u = (srcX + 0.5) / width;
+                const v = (srcY + 0.5) / height;
+                uvData[dstIdx*4] = u; uvData[dstIdx*4+1] = v;
+            }
+            gl.bindTexture(gl.TEXTURE_2D, uvTexture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, uvData);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+        }
+
+        function webglRenderFrame() {
+            if (!gl || !program || !video.videoWidth) return false;
+            // 确保uniform位置有效
+            if (uniformLoc.videoSampler === null || uniformLoc.uvSampler === null) return false;
+
+            if (offscreenCanvas.width !== video.videoWidth || offscreenCanvas.height !== video.videoHeight) {
+                offscreenCanvas.width = video.videoWidth; offscreenCanvas.height = video.videoHeight;
+                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+                gl.viewport(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+            }
+            gl.activeTexture(gl.TEXTURE0); 
+            gl.bindTexture(gl.TEXTURE_2D, videoTexture); 
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+            gl.activeTexture(gl.TEXTURE1); 
+            gl.bindTexture(gl.TEXTURE_2D, uvTexture);
+            gl.useProgram(program); 
+            // 设置uniform sampler值
+            gl.uniform1i(uniformLoc.videoSampler, 0); 
+            gl.uniform1i(uniformLoc.uvSampler, 1);
+            gl.bindVertexArray(vao); 
+            gl.drawArrays(gl.TRIANGLES, 0, 3); 
+            gl.bindVertexArray(null);
+            // 后处理：旋转180°固定 + 水平镜像强制
+            displayCtx.clearRect(0, 0, canvas.width, canvas.height);
+            displayCtx.save();
+            const w = canvas.width, h = canvas.height;
+            displayCtx.translate(w/2, h/2);
+            displayCtx.scale(-1, 1);        // 水平镜像强制
+            displayCtx.rotate(Math.PI);      // 旋转180°固定
+            displayCtx.drawImage(offscreenCanvas, -w/2, -h/2, w, h);
+            displayCtx.restore();
+            return true;
+        }
+
+        function stopDecoding() { isDecrypting = false; if (video) video.pause(); }
+        window.videoStopDecoding = stopDecoding;   // 供tab切换调用
+
+        function startDecode() {
+            if (!video.src) { statusEl.innerText = '请先选择视频'; actionStatus.innerText = '当前未导入视频，请选择解密状态。'; return; }
+            if (!video.videoWidth) { statusEl.innerText = '视频未完全加载'; return; }
+            stopDecoding();
+            videoWidth = video.videoWidth; videoHeight = video.videoHeight;
+            totalPixels = videoWidth * videoHeight;
+            canvas.width = videoWidth; canvas.height = videoHeight;
+            if (offscreenCanvas) { offscreenCanvas.width = videoWidth; offscreenCanvas.height = videoHeight; }
+            if (!initWebGL()) { 
+                statusEl.innerText = 'WebGL2初始化失败，无法解密'; 
+                return; 
+            }
+            try { 
+                currentDecryptMap = generateRawDecryptMap(); 
+            } catch (e) { 
+                statusEl.innerText = '映射生成失败'; 
+                return; 
+            }
+            updateUvTextureFromMap(currentDecryptMap, videoWidth, videoHeight);
+            isDecrypting = true;
+            actionStatus.innerText = '已选定解密模式，正在解密中';
+            video.play().then(() => {
+                function rafLoop() {
+                    if (!isDecrypting || video.paused || video.ended) return;
+                    webglRenderFrame();
+                    if (video.duration) progressBar.value = (video.currentTime / video.duration) * 100;
+                    requestAnimationFrame(rafLoop);
+                }
+                rafLoop();
+                statusEl.innerText = '解密播放中';
+            }).catch((e) => { 
+                isDecrypting = false; 
+                statusEl.innerText = '播放失败: ' + e.message; 
+                actionStatus.innerText = '已选择解密状态，请确认解密模式。';
+            });
+            video.onended = () => { isDecrypting = false; statusEl.innerText = '播放结束'; actionStatus.innerText = '已选择解密状态，请确认解密模式。'; };
+        }
+
+        // 事件绑定
+        document.getElementById('videoFileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0]; if (!file) return;
+            isDecrypting = false;
+            if (currentFileURL) URL.revokeObjectURL(currentFileURL);
+            currentFileURL = URL.createObjectURL(file);
+            video.src = currentFileURL; video.load(); video.pause();
+            statusEl.innerText = '视频加载中...';
+            actionStatus.innerText = '已选择解密状态，请确认解密模式。';
+            video.onloadedmetadata = () => {
+                videoWidth = video.videoWidth;
+                videoHeight = video.videoHeight;
+                if (videoWidth && videoHeight) {
+                    canvas.width = videoWidth;
+                    canvas.height = videoHeight;
+                    if (offscreenCanvas) { offscreenCanvas.width = videoWidth; offscreenCanvas.height = videoHeight; }
+                    document.getElementById('video-dim').innerText = `${videoWidth}x${videoHeight}`;
+                    // 检测是否为横屏视频
+                    isLandscapeVideo = videoWidth > videoHeight;
+                    statusEl.innerText = '视频就绪，可点击解密执行';
+                    actionStatus.innerText = '已选择解密状态，请确认解密模式。';
+                }
+            };
+            video.onerror = () => { statusEl.innerText = '视频加载失败'; actionStatus.innerText = '当前未导入视频，请选择解密状态。'; };
+        });
+        document.getElementById('startDecodeBtn').addEventListener('click', startDecode);
+        // 下载工具按钮事件
+        document.getElementById('downloadToolBtn').addEventListener('click', () => {
+            document.getElementById('downloadModal').style.display = 'flex';
+        });
+
+        // 关闭下载弹窗事件
+        document.getElementById('closeDownloadModalBtn').addEventListener('click', () => {
+            document.getElementById('downloadModal').style.display = 'none';
+        });
+
+        document.getElementById('closeDownloadModalBtnBottom').addEventListener('click', () => {
+            document.getElementById('downloadModal').style.display = 'none';
+        });
+
+        // 点击遮罩关闭弹窗
+        document.getElementById('downloadModal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('downloadModal')) {
+                document.getElementById('downloadModal').style.display = 'none';
+            }
+        });
+
+        document.getElementById('paramBtn').addEventListener('click', () => {
+            document.querySelector(`input[name="decMode"][value="${decMode}"]`).checked = true;
+            document.getElementById('keyInput').value = secretKey;
+            document.getElementById('blockWidth').value = blockW;
+            document.getElementById('blockHeight').value = blockH;
+            document.getElementById('blockWidthRow').style.display = decMode==='block'?'flex':'none';
+            document.getElementById('blockHeightRow').style.display = decMode==='block'?'flex':'none';
+            document.getElementById('paramModal').style.display = 'flex';
+        });
+        document.querySelectorAll('input[name="decMode"]').forEach(r => r.addEventListener('change', function(e) {
+            const mode = e.target.value;
+            document.getElementById('blockWidthRow').style.display = mode==='block'?'flex':'none';
+            document.getElementById('blockHeightRow').style.display = mode==='block'?'flex':'none';
+        }));
+        document.getElementById('closeParamBtn').addEventListener('click', () => {
+            decMode = document.querySelector('input[name="decMode"]:checked').value;
+            secretKey = document.getElementById('keyInput').value;
+            blockW = parseInt(document.getElementById('blockWidth').value,10) || 16;
+            blockH = parseInt(document.getElementById('blockHeight').value,10) || 16;
+            document.getElementById('paramModal').style.display = 'none';
+            statusEl.innerText = video.src ? '参数已更新' : '请先选择视频';
+            actionStatus.innerText = video.src ? '已选定解密模式，正在解密中' : '当前未导入视频，请选择解密状态。';
+        });
+        window.addEventListener('click', (e) => { if (e.target === document.getElementById('paramModal')) document.getElementById('paramModal').style.display = 'none'; });
+
+        // 进度条拖动
+        let seeking = false;
+        progressBar.addEventListener('mousedown',()=>{ seeking = true; });
+        progressBar.addEventListener('input', function(e) { if(video.duration) video.currentTime = (e.target.value/100)*video.duration; });
+        progressBar.addEventListener('mouseup', ()=>{ seeking = false; });
+        video.addEventListener('timeupdate', ()=>{ if(!seeking && video.duration) progressBar.value = (video.currentTime/video.duration)*100; });
+
+        // 双击进入/退出全屏
+        let clickCount = 0;
+        let clickTimer = null;
+        document.getElementById('canvasFullscreenWrapper').addEventListener('click', () => {
+            clickCount++;
+            if (clickCount === 1) {
+                clickTimer = setTimeout(() => {
+                    clickCount = 0;
+                }, 300);
+            } else if (clickCount === 2) {
+                clearTimeout(clickTimer);
+                clickCount = 0;
+                const wrap = document.getElementById('canvasFullscreenWrapper');
+                if (!document.fullscreenElement) {
+                    // 进入全屏
+                    console.log('Entering fullscreen - isMobile:', isMobile, 'isLandscapeVideo:', isLandscapeVideo, 'videoWidth:', videoWidth, 'videoHeight:', videoHeight);
+                    wrap.requestFullscreen().then(() => {
+                        console.log('Fullscreen entered successfully');
+                    }).catch(err => {
+                        console.error('Error entering fullscreen:', err);
+                    });
+                } else {
+                    // 退出全屏
+                    console.log('Exiting fullscreen');
+                    document.exitFullscreen();
+                }
+            }
+        });
+
+        // 全屏滑动控制
+        let touchStartX = 0;
+        let touchStartTime = 0;
+        const swipeThreshold = 50; // 最小滑动距离
+        const swipeTimeThreshold = 500; // 最大滑动时间
+        
+        function handleSwipe(deltaX, deltaTime) {
+            if (Math.abs(deltaX) < swipeThreshold || deltaTime > swipeTimeThreshold) return;
+            
+            // 计算滑动速度和距离，映射到秒数
+            const swipeSpeed = Math.abs(deltaX) / deltaTime; // 像素/毫秒
+            const seekSeconds = Math.max(1, Math.min(10, Math.floor(Math.abs(deltaX) / 50)));
+            
+            if (deltaX > 0) {
+                // 向右滑动，快进
+                video.currentTime = Math.min(video.duration, video.currentTime + seekSeconds);
+            } else {
+                // 向左滑动，回退
+                video.currentTime = Math.max(0, video.currentTime - seekSeconds);
+            }
+        }
+
+        // 鼠标事件
+        canvas.addEventListener('mousedown', (e) => {
+            if (!document.fullscreenElement) return;
+            touchStartX = e.clientX;
+            touchStartTime = Date.now();
+        });
+
+        canvas.addEventListener('mouseup', (e) => {
+            if (!document.fullscreenElement) return;
+            const touchEndX = e.clientX;
+            const touchEndTime = Date.now();
+            const deltaX = touchEndX - touchStartX;
+            const deltaTime = touchEndTime - touchStartTime;
+            handleSwipe(deltaX, deltaTime);
+        });
+
+        // 触摸事件
+        canvas.addEventListener('touchstart', (e) => {
+            if (!document.fullscreenElement) return;
+            touchStartX = e.touches[0].clientX;
+            touchStartTime = Date.now();
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            if (!document.fullscreenElement) return;
+            if (e.changedTouches.length > 0) {
+                const touchEndX = e.changedTouches[0].clientX;
+                const touchEndTime = Date.now();
+                const deltaX = touchEndX - touchStartX;
+                const deltaTime = touchEndTime - touchStartTime;
+                handleSwipe(deltaX, deltaTime);
+            }
+        });
+
+
+
+        // 监听全屏状态变化
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                // 进入全屏
+                console.log('Fullscreen entered - isMobile:', isMobile, 'isLandscapeVideo:', isLandscapeVideo);
+                if (isMobile && isLandscapeVideo) {
+                    console.log('Applying landscape rotation');
+                    // 对于移动设备横屏视频，强制横屏显示
+                    const fullscreenElement = document.fullscreenElement;
+                    if (fullscreenElement) {
+                        // 保存原始样式
+                        fullscreenElement.dataset.originalStyle = fullscreenElement.style.cssText;
+                        
+                        // 应用横屏样式
+                        fullscreenElement.style.width = '100%';
+                        fullscreenElement.style.height = '100%';
+                        fullscreenElement.style.objectFit = 'contain';
+                        
+                        // 调整body
+                        document.body.style.orientation = 'landscape';
+                        document.body.style.width = '100%';
+                        document.body.style.height = '100%';
+                        document.body.style.margin = '0';
+                        document.body.style.padding = '0';
+                        document.body.style.overflow = 'hidden';
+                    }
+                }
+            } else {
+                // 退出全屏
+                console.log('Fullscreen exited');
+                if (isMobile && isLandscapeVideo) {
+                    console.log('Restoring portrait orientation');
+                    // 恢复全屏元素样式
+                    const wrap = document.getElementById('canvasFullscreenWrapper');
+                    if (wrap.dataset.originalStyle) {
+                        wrap.style.cssText = wrap.dataset.originalStyle;
+                        delete wrap.dataset.originalStyle;
+                    }
+                    
+                    // 恢复body样式
+                    document.body.style.orientation = '';
+                    document.body.style.width = '';
+                    document.body.style.height = '';
+                    document.body.style.margin = '';
+                    document.body.style.padding = '';
+                    document.body.style.overflow = '';
+                }
+            }
+        });
+
+        window.addEventListener('beforeunload', () => { if (currentFileURL) URL.revokeObjectURL(currentFileURL); });
+        // 水平镜像强制开启
+        const mirrorV = document.getElementById('horizontalMirrorVideo'); if (mirrorV) mirrorV.checked = true;
+    })();
+
+    // ==================== 图片解密模块 (IIFE) ====================
+    (function() {
+        "use strict";
+        // 图片页面元素
+        const imagePicker = document.getElementById('imageFilePicker');
+        const browseBtn = document.getElementById('browseImages');
+        const viewPreviewBtn = document.getElementById('viewPreviewBtn');
+        const previewModal = document.getElementById('previewModal');
+        const prevBtn = document.getElementById('prevPreviewBtn');
+        const nextBtn = document.getElementById('nextPreviewBtn');
+        const previewImg = document.getElementById('previewImg');
+        const previewCounter = document.getElementById('previewCounter');
+        const startEncrypt = document.getElementById('startEncryptImg');
+        const startDecrypt = document.getElementById('startDecryptImg');
+        const keyInput = document.getElementById('keyInputImg');
+        const randomKeyBtn = document.getElementById('randomKeyBtn');
+        const copyKeyBtn = document.getElementById('copyKeyBtn');
+        const exportConfigBtn = document.getElementById('exportConfigImg');
+        const downloadAllBtn = document.getElementById('downloadAllBtn');
+        const chooseMethodBtn = document.getElementById('chooseMethodBtn');
+        const currentMethodDisplay = document.getElementById('currentMethodDisplay');
+        const encryptMethodModal = document.getElementById('encryptMethodModal');
+        const imgEncryptRadios = document.querySelectorAll('input[name="imgEncryptMode"]');
+        const imgBlockParamsDiv = document.getElementById('imgBlockParams');
+        const imgBlockWidthSelect = document.getElementById('imgBlockWidthSelect');
+        const imgBlockHeightSelect = document.getElementById('imgBlockHeightSelect');
+        const standardizeBtn = document.getElementById('standardizeBtn');
+        const saveEncryptMethodBtn = document.getElementById('saveEncryptMethodBtn');
+        const blockHint = document.getElementById('blockHint');
+        const packCheck = document.getElementById('packDownload');
+        const exportKeyCheck = document.getElementById('exportKeyFileCheckbox');
+        const imgFormatSelect = document.getElementById('imgFormat');
+        const imageProgress = document.getElementById('imageProgress');
+        const selectedCountDisplay = document.getElementById('selectedCountDisplay');
+        const resetBtn = document.getElementById('resetToOriginalBtn');
+        const reencryptToggleBtn = document.getElementById('reencryptToggleBtn');
+        const mirrorImg = document.getElementById('horizontalMirrorImage'); if (mirrorImg) mirrorImg.checked = true;
+
+        // 状态变量
+        let selectedImageFiles = [];
+        let previewUrls = [];
+        let currentPreviewIndex = 0;
+        let imgMethod = 'gilbert';
+        let imgBlockW = 1, imgBlockH = 1;
+        let latestProcessedImages = [];
+        let latestKeyParams = null;
+        let isProcessing = false;
+        let isReencryptEnabled = false;
+        let cachedFirstImageWidth = null, cachedFirstImageHeight = null, cachedFirstImageName = '';
+        const mapCache = new Map();
+
+        // 重加密功能切换
+        reencryptToggleBtn.addEventListener('click', function() {
+            isReencryptEnabled = !isReencryptEnabled;
+            if (isReencryptEnabled) {
+                reencryptToggleBtn.innerHTML = '✅ 允许重加密';
+                reencryptToggleBtn.classList.remove('disabled');
+                reencryptToggleBtn.classList.add('highlight');
+                // 开启允许重加密时，启用加密和解密按钮
+                enableExportControls();
+            } else {
+                reencryptToggleBtn.innerHTML = '🚫 禁止重加密';
+                reencryptToggleBtn.classList.remove('highlight');
+                reencryptToggleBtn.classList.add('disabled');
+            }
+        });
+
+        // 辅助哈希
+        function simpleHash(s) { let h=0; for(let i=0;i<s.length;i++){ h=((h<<5)-h)+s.charCodeAt(i); h|=0; } return Math.abs(h); }
+
+        // 吉尔伯特曲线 (返回坐标数组)
+        function gilbert2d(width, height) {
+            const coordinates = [];
+            if (width >= height) generate2d(0, 0, width, 0, 0, height, coordinates);
+            else generate2d(0, 0, 0, height, width, 0, coordinates);
+            return coordinates;
+        }
+        function generate2d(x, y, ax, ay, bx, by, coordinates) {
+            const w = Math.abs(ax + ay), h = Math.abs(bx + by);
+            const dax = Math.sign(ax), day = Math.sign(ay), dbx = Math.sign(bx), dby = Math.sign(by);
+            if (h === 1) { for (let i = 0; i < w; i++) { coordinates.push([x, y]); x += dax; y += day; } return; }
+            if (w === 1) { for (let i = 0; i < h; i++) { coordinates.push([x, y]); x += dbx; y += dby; } return; }
+            let ax2 = Math.floor(ax / 2), ay2 = Math.floor(ay / 2), bx2 = Math.floor(bx / 2), by2 = Math.floor(by / 2);
+            const w2 = Math.abs(ax2 + ay2), h2 = Math.abs(bx2 + by2);
+            if (2 * w > 3 * h) {
+                if ((w2 % 2) && (w > 2)) { ax2 += dax; ay2 += day; }
+                generate2d(x, y, ax2, ay2, bx, by, coordinates);
+                generate2d(x + ax2, y + ay2, ax - ax2, ay - ay2, bx, by, coordinates);
+            } else {
+                if ((h2 % 2) && (h > 2)) { bx2 += dbx; by2 += dby; }
+                generate2d(x, y, bx2, by2, ax2, ay2, coordinates);
+                generate2d(x + bx2, y + by2, ax, ay, bx - bx2, by - by2, coordinates);
+                generate2d(x + (ax - dax) + (bx2 - dbx), y + (ay - day) + (by2 - dby), -bx2, -by2, -(ax - ax2), -(ay - ay2), coordinates);
+            }
+        }
+
+        function buildGilbertEncryptMap(width, height, key) {
+            const total = width * height;
+            const curveCoords = gilbert2d(width, height);
+            let offset = key ? simpleHash(key) % total : Math.round((Math.sqrt(5)-1)/2 * total);
+            const encMap = new Uint32Array(total);
+            for (let i = 0; i < total; i++) {
+                const oldPos = curveCoords[i];
+                const oldLinear = oldPos[1] * width + oldPos[0];
+                const newPos = curveCoords[(i + offset) % total];
+                const newLinear = newPos[1] * width + newPos[0];
+                encMap[newLinear] = oldLinear;
+            }
+            return encMap;
+        }
+
+        function buildBlockEncryptMap(width, height, blockW, blockH, key) {
+            const cols = Math.ceil(width / blockW), rows = Math.ceil(height / blockH);
+            const totalBlocks = cols * rows;
+            let seed = key ? simpleHash(key) : 123456;
+            function rng() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
+            const perm = Array.from({length: totalBlocks}, (_,i)=>i);
+            for (let i=perm.length-1; i>0; i--) { const j = Math.floor(rng() * (i+1)); [perm[i], perm[j]] = [perm[j], perm[i]]; }
+            const blocks = [];
+            for (let r=0; r<rows; r++) for (let c=0; c<cols; c++) {
+                const x = c*blockW, y = r*blockH, w = Math.min(blockW, width-x), h = Math.min(blockH, height-y);
+                blocks.push({x, y, w, h, idx: r*cols + c});
+            }
+            const encMap = new Uint32Array(width * height);
+            for (let dstIdx = 0; dstIdx < width*height; dstIdx++) {
+                const dstY = Math.floor(dstIdx / width), dstX = dstIdx % width;
+                const dstCol = Math.floor(dstX / blockW), dstRow = Math.floor(dstY / blockH);
+                const dstBlockIdx = dstRow * cols + dstCol;
+                const srcBlockIdx = perm[dstBlockIdx];
+                const srcBlock = blocks[srcBlockIdx];
+                const localX = dstX - dstCol*blockW, localY = dstY - dstRow*blockH;
+                let srcX = srcBlock.x + localX, srcY = srcBlock.y + localY;
+                if (srcX >= width) srcX = width-1; if (srcY >= height) srcY = height-1;
+                encMap[dstIdx] = srcY * width + srcX;
+            }
+            return encMap;
+        }
+        function invertMap(map, len) { const inv = new Uint32Array(len); for (let i=0; i<len; i++) inv[map[i]] = i; return inv; }
+
+        async function processImage(file, mode, blockW, blockH) {
+            const bitmap = await createImageBitmap(file);
+            const width = bitmap.width, height = bitmap.height;
+            const canvas = new OffscreenCanvas(width, height);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0);
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+            const totalPixels = width * height;
+            const keyStr = keyInput.value || '';
+            let cacheKey = (imgMethod === 'gilbert') ? `gilbert:${width}:${height}:${keyStr}` : `block:${width}:${height}:${keyStr}:${blockW}:${blockH}`;
+            let encMap, invMap;
+            if (mapCache.has(cacheKey)) {
+                const pair = mapCache.get(cacheKey); encMap = pair.encMap; invMap = pair.invMap;
+            } else {
+                if (imgMethod === 'gilbert') encMap = buildGilbertEncryptMap(width, height, keyStr);
+                else encMap = buildBlockEncryptMap(width, height, blockW, blockH, keyStr);
+                invMap = invertMap(encMap, totalPixels);
+                mapCache.set(cacheKey, { encMap, invMap });
+            }
+            const map = (mode === 'encrypt') ? encMap : invMap;
+            const newData = new Uint8ClampedArray(data.length);
+            for (let dstIdx = 0; dstIdx < totalPixels; dstIdx++) {
+                const srcIdx = map[dstIdx];
+                newData[dstIdx*4] = data[srcIdx*4];
+                newData[dstIdx*4+1] = data[srcIdx*4+1];
+                newData[dstIdx*4+2] = data[srcIdx*4+2];
+                newData[dstIdx*4+3] = data[srcIdx*4+3];
+            }
+            ctx.putImageData(new ImageData(newData, width, height), 0, 0);
+            const format = imgFormatSelect.value;
+            let mime, quality;
+            if (format === 'jpg95') { mime = 'image/jpeg'; quality = 0.95; }
+            else if (format === 'png') { mime = 'image/png'; quality = undefined; }
+            else { mime = 'image/webp'; quality = 1.0; }
+            const blob = await canvas.convertToBlob({ type: mime, quality: quality });
+            const ext = mime.split('/')[1];
+            const baseName = file.name.replace(/\.[^/.]+$/, '');
+            const suffix = (mode==='encrypt'?'_encrypted':'_decrypted');
+            return { blob, name: `${baseName}${suffix}.${ext}` };
+        }
+
+        async function updateFirstImageCache() {
+            if (selectedImageFiles.length === 0) { cachedFirstImageWidth = cachedFirstImageHeight = null; cachedFirstImageName = ''; return; }
+            try {
+                const file = selectedImageFiles[0];
+                const bitmap = await createImageBitmap(file);
+                cachedFirstImageWidth = bitmap.width; cachedFirstImageHeight = bitmap.height; cachedFirstImageName = file.name;
+                bitmap.close();
+            } catch (e) { console.warn(e); cachedFirstImageWidth = cachedFirstImageHeight = null; cachedFirstImageName = ''; }
+        }
+
+        function fillBlockOptions(width, height) {
+            const widthFactors = [], heightFactors = [];
+            for (let i = 1; i <= width; i++) if (width % i === 0) widthFactors.push(i);
+            for (let i = 1; i <= height; i++) if (height % i === 0) heightFactors.push(i);
+            imgBlockWidthSelect.innerHTML = widthFactors.map(v => `<option value="${v}">${v}</option>`).join('');
+            imgBlockHeightSelect.innerHTML = heightFactors.map(v => `<option value="${v}">${v}</option>`).join('');
+            imgBlockWidthSelect.value = '1'; imgBlockHeightSelect.value = '1'; imgBlockW = 1; imgBlockH = 1;
+            imgBlockWidthSelect.disabled = false; imgBlockHeightSelect.disabled = false; standardizeBtn.disabled = false;
+            imgBlockWidthSelect.size = Math.min(5, imgBlockWidthSelect.options.length);
+            imgBlockHeightSelect.size = Math.min(5, imgBlockHeightSelect.options.length);
+            updateBlockHintAndVars();
+        }
+        function updateBlockHintAndVars() {
+            if (selectedImageFiles.length === 0 || !cachedFirstImageWidth) { blockHint.innerText = '请先选择图片'; return; }
+            const w = parseInt(imgBlockWidthSelect.value,10); const h = parseInt(imgBlockHeightSelect.value,10);
+            if (isNaN(w)||isNaN(h)||w===0||h===0) return;
+            if (cachedFirstImageWidth % w !== 0 || cachedFirstImageHeight % h !== 0) blockHint.innerText = '警告：块大小不能整除图像，将产生不完整块';
+            else { const rows = cachedFirstImageWidth / w; const cols = cachedFirstImageHeight / h; blockHint.innerText = `可用分块：${rows} 列 × ${cols} 行 = ${rows*cols} 块`; }
+            imgBlockW = w; imgBlockH = h;
+        }
+        async function updateBlockSizeOptions() {
+            imgBlockWidthSelect.disabled = true; imgBlockHeightSelect.disabled = true; standardizeBtn.disabled = true;
+            if (selectedImageFiles.length === 0) {
+                imgBlockWidthSelect.innerHTML = '<option>请先选择图片</option>'; imgBlockHeightSelect.innerHTML = '<option>请先选择图片</option>'; blockHint.innerText = ''; return;
+            }
+            if (selectedImageFiles.length > 1) {
+                imgBlockWidthSelect.innerHTML = '<option value="1" selected>1 (多文件模式)</option>'; imgBlockHeightSelect.innerHTML = '<option value="1" selected>1 (多文件模式)</option>';
+                imgBlockW = 1; imgBlockH = 1; blockHint.innerText = '多文件模式下块大小固定为1×1（像素级打乱）';
+                imgBlockWidthSelect.disabled = false; imgBlockHeightSelect.disabled = false; standardizeBtn.disabled = true;
+                imgBlockWidthSelect.size = 1; imgBlockHeightSelect.size = 1; return;
+            }
+            const file = selectedImageFiles[0];
+            if (cachedFirstImageName === file.name && cachedFirstImageWidth && cachedFirstImageHeight) fillBlockOptions(cachedFirstImageWidth, cachedFirstImageHeight);
+            else {
+                imgBlockWidthSelect.innerHTML = '<option>加载尺寸中…</option>'; imgBlockHeightSelect.innerHTML = '<option>加载尺寸中…</option>'; blockHint.innerText = '正在解析图片…';
+                await updateFirstImageCache();
+                if (selectedImageFiles[0] === file && cachedFirstImageName === file.name && cachedFirstImageWidth) fillBlockOptions(cachedFirstImageWidth, cachedFirstImageHeight);
+                else { imgBlockWidthSelect.innerHTML = '<option>无法读取图片</option>'; imgBlockHeightSelect.innerHTML = '<option>无法读取图片</option>'; blockHint.innerText = '读取失败'; }
+            }
+        }
+
+        function disableExportControls() { imgFormatSelect.disabled = true; startEncrypt.disabled = true; startDecrypt.disabled = true; }
+        function enableExportControls() { imgFormatSelect.disabled = false; startEncrypt.disabled = false; startDecrypt.disabled = false; }
+
+        function resetToOriginal() {
+            if (isProcessing) { alert('请等待当前处理完成'); return; }
+            if (!selectedImageFiles.length) { alert('没有已选择的图片'); return; }
+            previewUrls.forEach(url => URL.revokeObjectURL(url));
+            previewUrls = selectedImageFiles.map(f => URL.createObjectURL(f));
+            currentPreviewIndex = 0; latestProcessedImages = []; latestKeyParams = null;
+            downloadAllBtn.classList.remove('highlight');
+            imageProgress.value = 0; selectedCountDisplay.value = selectedImageFiles.length + ' 张图片';
+            enableExportControls();
+            if (previewModal.style.display === 'flex' && previewUrls.length) { previewImg.src = previewUrls[0]; previewCounter.innerText = `1 / ${previewUrls.length}`; }
+        }
+
+        async function handleImages(mode) {
+            if (isProcessing) return; if (!selectedImageFiles.length) { alert('请先选择图片文件'); return; }
+            isProcessing = true; disableExportControls();
+            try {
+                imageProgress.value = 0; downloadAllBtn.classList.remove('highlight');
+                let currentBlockW = imgBlockW, currentBlockH = imgBlockH;
+                if (imgMethod === 'block' && selectedImageFiles.length > 1) { currentBlockW = 1; currentBlockH = 1; }
+                else if (imgMethod === 'block' && selectedImageFiles.length === 1) {
+                    const wVal = parseInt(imgBlockWidthSelect.value,10); const hVal = parseInt(imgBlockHeightSelect.value,10);
+                    currentBlockW = (isNaN(wVal)||wVal<1) ? 1 : wVal; currentBlockH = (isNaN(hVal)||hVal<1) ? 1 : hVal;
+                }
+                const total = selectedImageFiles.length; const results = new Array(total); let completed = 0;
+                // 保存当前的处理结果，用于叠加加密
+                const previousProcessedImages = [...latestProcessedImages];
+                const promises = selectedImageFiles.map(async (file, idx) => {
+                    let inputFile = file;
+                    // 对于加密和解密操作，都使用上一次处理的结果作为输入（叠加处理）
+                    if (previousProcessedImages.length > 0 && idx < previousProcessedImages.length) {
+                        // 从previousProcessedImages中获取上一次处理的结果
+                        const prevResult = previousProcessedImages[idx];
+                        if (prevResult) {
+                            // 将blob转换为File对象
+                            inputFile = new File([prevResult.blob], prevResult.name, { type: prevResult.blob.type });
+                        }
+                    }
+                    return processImage(inputFile, mode, currentBlockW, currentBlockH).then(({blob, name}) => { 
+                        results[idx] = { blob, name }; 
+                        completed++; 
+                        imageProgress.value = Math.round((completed/total)*100); 
+                    });
+                });
+                await Promise.all(promises);
+                latestProcessedImages = results.filter(r => r !== undefined);
+                latestKeyParams = { key: keyInput.value, method: imgMethod, blockW: currentBlockW, blockH: currentBlockH, format: imgFormatSelect.value };
+                previewUrls.forEach(url => URL.revokeObjectURL(url));
+                previewUrls = latestProcessedImages.map(r => URL.createObjectURL(r.blob));
+                currentPreviewIndex = 0;
+                const formatText = imgFormatSelect.options[imgFormatSelect.selectedIndex].text;
+                downloadAllBtn.classList.add('highlight'); selectedCountDisplay.value = results.length + ' 张图片';
+                if (previewModal.style.display === 'flex' && previewUrls.length) { previewImg.src = previewUrls[0]; previewCounter.innerText = `1 / ${previewUrls.length}`; }
+                // 只有在允许重加密时才启用按钮
+                if (isReencryptEnabled) {
+                    enableExportControls();
+                }
+            } catch (e) { console.error(e); alert(`处理失败: ${e.message}`); enableExportControls(); latestProcessedImages = []; previewUrls.forEach(url => URL.revokeObjectURL(url)); previewUrls = selectedImageFiles.map(f => URL.createObjectURL(f)); imageProgress.value = 0; }
+            finally { isProcessing = false; }
+        }
+
+        function downloadAll() {
+            if (!latestProcessedImages.length) { alert('请先执行加密或解密操作'); return; }
+            const usePack = packCheck.checked; const zip = usePack ? new JSZip() : null;
+            const results = latestProcessedImages;
+            if (usePack) {
+                results.forEach(r => zip.file(r.name, r.blob));
+                if (exportKeyCheck.checked && latestKeyParams) {
+                    const p = latestKeyParams; const keyText = `# 加密参数\n密钥: ${p.key}\n方式: ${p.method}\n块宽: ${p.blockW}\n块高: ${p.blockH}\n导出格式: ${p.format}\n`;
+                    zip.file('key_and_params.txt', keyText);
+                }
+                zip.generateAsync({ type: 'blob' }).then(content => saveAs(content, `processed_images_${Date.now()}.zip`));
+            } else {
+                results.forEach(r => saveAs(r.blob, r.name));
+                if (exportKeyCheck.checked && latestKeyParams) {
+                    const p = latestKeyParams; const keyText = `密钥: ${p.key}\n方式: ${p.method}\n块宽: ${p.blockW}\n块高: ${p.blockH}\n导出格式: ${p.format}`;
+                    saveAs(new Blob([keyText], { type: 'text/plain' }), 'key_params.txt');
+                }
+            }
+        }
+        async function exportToFolder() {
+            if (!latestProcessedImages.length) { alert('请先执行加密或解密操作'); return; }
+            if (!window.showDirectoryPicker) { downloadAll(); return; }
+            try {
+                const dirHandle = await window.showDirectoryPicker();
+                for (const img of latestProcessedImages) {
+                    const fileHandle = await dirHandle.getFileHandle(img.name, { create: true });
+                    const writable = await fileHandle.createWritable(); await writable.write(img.blob); await writable.close();
+                }
+                if (exportKeyCheck.checked && latestKeyParams) {
+                    const p = latestKeyParams; const keyText = `密钥: ${p.key}\n方式: ${p.method}\n块宽: ${p.blockW}\n块高: ${p.blockH}\n导出格式: ${p.format}`;
+                    const keyBlob = new Blob([keyText], { type: 'text/plain' });
+                    const keyHandle = await dirHandle.getFileHandle('key_params.txt', { create: true });
+                    const writable = await keyHandle.createWritable(); await writable.write(keyBlob); await writable.close();
+                }
+                alert(`成功导出 ${latestProcessedImages.length} 张图片到所选文件夹。`);
+            } catch (err) { if (err.name !== 'AbortError') { console.error(err); alert('导出失败：' + err.message); } }
+        }
+
+        // 事件绑定
+        browseBtn.addEventListener('click', () => imagePicker.click());
+        imagePicker.addEventListener('change', function(e) {
+            if (isProcessing) { alert('正在处理中，请等待完成或点击还原'); return; }
+            const files = Array.from(e.target.files); if (!files.length) return;
+            selectedImageFiles = files;
+            previewUrls.forEach(url => URL.revokeObjectURL(url));
+            previewUrls = files.map(f => URL.createObjectURL(f));
+            latestProcessedImages = []; latestKeyParams = null;
+            selectedCountDisplay.value = files.length + ' 张图片';
+            imageProgress.value = 0;
+            downloadAllBtn.classList.remove('highlight'); enableExportControls();
+            updateFirstImageCache().then(() => { if (imgMethod === 'block' && encryptMethodModal.style.display === 'flex') updateBlockSizeOptions(); });
+        });
+        viewPreviewBtn.addEventListener('click', () => {
+            if (previewUrls.length === 0) { alert('请先选择图片'); return; }
+            currentPreviewIndex = 0; previewImg.src = previewUrls[0]; previewCounter.innerText = `1 / ${previewUrls.length}`; previewModal.style.display = 'flex';
+        });
+        window.addEventListener('click', (e) => { if (e.target === previewModal) previewModal.style.display = 'none'; });
+        prevBtn.addEventListener('click', () => { if (previewUrls.length === 0) return; currentPreviewIndex = (currentPreviewIndex - 1 + previewUrls.length) % previewUrls.length; previewImg.src = previewUrls[currentPreviewIndex]; previewCounter.innerText = `${currentPreviewIndex+1} / ${previewUrls.length}`; });
+        nextBtn.addEventListener('click', () => { if (previewUrls.length === 0) return; currentPreviewIndex = (currentPreviewIndex + 1) % previewUrls.length; previewImg.src = previewUrls[currentPreviewIndex]; previewCounter.innerText = `${currentPreviewIndex+1} / ${previewUrls.length}`; });
+        randomKeyBtn.addEventListener('click', () => { keyInput.value = Math.random().toString(36).substring(2, 10); });
+        copyKeyBtn.addEventListener('click', () => { navigator.clipboard?.writeText(keyInput.value).then(() => alert('密钥已复制')); });
+        startEncrypt.addEventListener('click', () => handleImages('encrypt'));
+        startDecrypt.addEventListener('click', () => handleImages('decrypt'));
+        downloadAllBtn.addEventListener('click', downloadAll);
+        exportConfigBtn.addEventListener('click', exportToFolder);
+        resetBtn.addEventListener('click', resetToOriginal);
+        chooseMethodBtn.addEventListener('click', () => {
+            document.querySelector(`input[name="imgEncryptMode"][value="${imgMethod}"]`).checked = true;
+            imgBlockParamsDiv.style.display = imgMethod === 'block' ? 'block' : 'none';
+            if (imgMethod === 'block') updateBlockSizeOptions();
+            encryptMethodModal.style.display = 'flex';
+        });
+        imgEncryptRadios.forEach(radio => { radio.addEventListener('change', (e) => { const show = e.target.value === 'block'; imgBlockParamsDiv.style.display = show ? 'block' : 'none'; if (show) updateBlockSizeOptions(); }); });
+        standardizeBtn.addEventListener('click', () => {
+            if (selectedImageFiles.length > 1) return;
+            const wVal = imgBlockWidthSelect.value; if (!wVal) return;
+            let exists = Array.from(imgBlockHeightSelect.options).some(opt => opt.value === wVal);
+            if (!exists) { const newOpt = document.createElement('option'); newOpt.value = wVal; newOpt.text = wVal + ' (自定义)'; imgBlockHeightSelect.appendChild(newOpt); }
+            imgBlockHeightSelect.value = wVal; imgBlockH = parseInt(wVal,10); updateBlockHintAndVars();
+            imgBlockHeightSelect.size = Math.min(5, imgBlockHeightSelect.options.length);
+        });
+        saveEncryptMethodBtn.addEventListener('click', () => {
+            const selected = document.querySelector('input[name="imgEncryptMode"]:checked').value;
+            imgMethod = selected;
+            currentMethodDisplay.innerText = (selected === 'gilbert') ? '吉尔伯特曲线' : '分块打乱';
+            if (selected === 'block') {
+                if (selectedImageFiles.length > 1) { imgBlockW = 1; imgBlockH = 1; }
+                else { const wVal = parseInt(imgBlockWidthSelect.value,10); const hVal = parseInt(imgBlockHeightSelect.value,10); imgBlockW = (isNaN(wVal)||wVal<1)?1:wVal; imgBlockH = (isNaN(hVal)||hVal<1)?1:hVal; }
+            }
+            encryptMethodModal.style.display = 'none';
+        });
+        window.addEventListener('click', (e) => { if (e.target === encryptMethodModal) encryptMethodModal.style.display = 'none'; });
+        imgBlockWidthSelect.addEventListener('change', updateBlockHintAndVars);
+        imgBlockHeightSelect.addEventListener('change', updateBlockHintAndVars);
+        previewImg.addEventListener('click', function(e) { e.stopPropagation(); if (document.fullscreenElement) document.exitFullscreen(); else this.requestFullscreen(); });
+        window.saveAs = window.saveAs || function(blob, name) { const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = name; link.click(); URL.revokeObjectURL(link.href); };
+    })();
+
+    // ==================== 标签页切换 & 刷新 (独立) ====================
+    (function() {
+        const tabVideo = document.getElementById('tabVideoDecode');
+        const tabImage = document.getElementById('tabImageDecode');
+        const pageVideo = document.getElementById('videoPage');
+        const pageImage = document.getElementById('imagePage');
+        const refreshBtn = document.getElementById('refreshCurrentBtn');
+
+        function switchToTab(tab) {
+            if (tab === 'video') {
+                tabVideo.classList.add('active'); tabImage.classList.remove('active');
+                pageVideo.classList.add('active-page'); pageImage.classList.remove('active-page');
+                if (typeof window.videoStopDecoding === 'function') window.videoStopDecoding();
+                localStorage.setItem('activeCipherTab', 'video');
+            } else {
+                tabImage.classList.add('active'); tabVideo.classList.remove('active');
+                pageImage.classList.add('active-page'); pageVideo.classList.remove('active-page');
+                if (typeof window.videoStopDecoding === 'function') window.videoStopDecoding(); // 停止视频播放
+                localStorage.setItem('activeCipherTab', 'image');
+            }
+        }
+
+        const saved = localStorage.getItem('activeCipherTab');
+        if (saved === 'image') switchToTab('image'); else switchToTab('video');
+
+        tabVideo.addEventListener('click', () => switchToTab('video'));
+        tabImage.addEventListener('click', () => switchToTab('image'));
+        refreshBtn.addEventListener('click', () => location.reload());
+    })();
+</script>
+</body>
+
+</html>
